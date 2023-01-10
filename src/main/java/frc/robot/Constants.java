@@ -19,6 +19,16 @@ public final class Constants
     public static final int kDriverControllerPort = 0,
     
     rightBack = 0, rightFront = 1,
-    leftBack = 2, leftFront = 3;
+    leftBack = 2, leftFront = 3,
+
+    gyro = 4,
+    
+    
+    
+    kfalconScale = 1,
+    
+    kCountsPerRev = 1, kGearRatio = 1, kWheelRadiusInches = 1;
+
+    
   }
 }
