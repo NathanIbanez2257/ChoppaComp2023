@@ -13,11 +13,13 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.kinematics.DifferentialDriveOdometry;
 import edu.wpi.first.math.kinematics.DifferentialDriveWheelSpeeds;
 import edu.wpi.first.math.util.Units;
+import edu.wpi.first.networktables.NetworkTable;
+import edu.wpi.first.networktables.NetworkTableEntry;
+import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.wpilibj.drive.DifferentialDrive;
 import edu.wpi.first.wpilibj.motorcontrol.MotorControllerGroup;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
-import frc.robot.Constants;
 import frc.robot.Constants.DriveConstants;
 
 public class drive extends SubsystemBase {
@@ -39,6 +41,9 @@ public class drive extends SubsystemBase {
 
   Pose2d pose = new Pose2d();
 
+  double x, y, a, distanceToTarget,
+      leftPosition, rightPosition, leftEncoderInFeet, rightEncoderInFeet;
+
   private final DifferentialDriveOdometry mOdometry;
 
   public drive() {
@@ -54,6 +59,7 @@ public class drive extends SubsystemBase {
 
   }
 
+  /////////////////////                 Drivetrain Methods       ////////////////////////
   public void move(double leftSpeed, double rightSpeed) {
     leftSide.setInverted(true);
     drive.tankDrive(leftSpeed, rightSpeed);
@@ -62,22 +68,6 @@ public class drive extends SubsystemBase {
   private void followSides() {
     leftBack.follow(leftFront);
     rightBack.follow(rightFront);
-  }
-
-  public double getRightSideEncoderPosition() {
-    return -rightFront.getSelectedSensorPosition();
-  }
-
-  public double getLeftSideEncoderPosition() {
-    return -leftFront.getSelectedSensorPosition();
-  }
-
-  public double getRightSideSensorVelocity() {
-    return rightFront.getSelectedSensorVelocity();
-  }
-
-  public double getLeftSideSensorVelocity() {
-    return leftFront.getSelectedSensorVelocity();
   }
 
   private void brakeMode() {
@@ -97,12 +87,38 @@ public class drive extends SubsystemBase {
 
   }
 
+  /////////////////////                 Encoder Methods       ////////////////////////
+
+  public double getRightSideEncoderPosition() {
+    return -rightFront.getSelectedSensorPosition();
+  }
+
+  public double getLeftSideEncoderPosition() {
+    return -leftFront.getSelectedSensorPosition();
+  }
+
+  public double getRightSideSensorVelocity() {
+    return rightFront.getSelectedSensorVelocity();
+  }
+
+  public double getLeftSideSensorVelocity() {
+    return leftFront.getSelectedSensorVelocity();
+  }
+
   private void resetEncoders() {
     rightBack.setSelectedSensorPosition(0);
     rightFront.setSelectedSensorPosition(0);
 
     leftBack.setSelectedSensorPosition(0);
     leftFront.setSelectedSensorPosition(0);
+  }
+
+
+  /////////////////////                 Odometry Methods       ////////////////////////
+
+  public void resetOdometry(Pose2d pose) {
+    resetEncoders();
+    mOdometry.resetPosition(gyro2D, leftSideNativeDistanceInMeters(0), rightSideNativeDistanceInMeters(0), null);
   }
 
   private void resetGyro() {
@@ -123,27 +139,32 @@ public class drive extends SubsystemBase {
     return gyro.getYaw();
   }
 
-  private Pose2d getPose() {
+  public Pose2d getPose() {
     return mOdometry.getPoseMeters();
   }
 
   public double getRate() {
     return gyro.getRate(); // negative
   }
-  
+
+
+  /////////////////////                 Differential Drive Method        ////////////////////////
+
   public DifferentialDriveWheelSpeeds getWheelSpeeds() {
     return new DifferentialDriveWheelSpeeds(getLeftSideSensorVelocity(), getRightSideSensorVelocity());
   }
-  
-  public void tankDriveVolts(double leftVolts, double rightVolts){
+
+ 
+  /////////////////////                 Volatage Methods       ////////////////////////
+
+  public void tankDriveVolts(double leftVolts, double rightVolts) {
     leftFront.setVoltage(-leftVolts);
     rightFront.setVoltage(rightVolts);
 
     drive.feed();
   }
 
-  public void setMaxOutput(double maxOutput)
-  {
+  public void setMaxOutput(double maxOutput) {
     drive.setMaxOutput(maxOutput);
   }
 
@@ -151,7 +172,7 @@ public class drive extends SubsystemBase {
     return ((getRightSideEncoderPosition() + getLeftSideEncoderPosition()) / 2.0);
 
   }
-  
+
   private void setFalconScale() {
     rightBack.configSelectedFeedbackCoefficient(DriveConstants.kfalconScale);
     rightFront.configSelectedFeedbackCoefficient(DriveConstants.kfalconScale);
@@ -180,8 +201,67 @@ public class drive extends SubsystemBase {
 
   }
 
+
+  /////////////////////                 Limelight Methods       ////////////////////////
+
+  public double angleOff()
+  {
+    return x;
+  }
+
+  public double verticalOffset()
+  {
+    return y;
+  }
+
+  public double targetArea()
+  {
+    return a;
+  }
+
+  public double currentDistance()
+  {
+    return distanceToTarget;
+  }
+
+  public double encoderCurrentDistance()
+  {
+    return leftEncoderInFeet;
+  }
+
+
+
   @Override
   public void periodic() {
+
+    leftEncoderInFeet = leftPosition * DriveConstants.kEncoderDistancePerPulse;
+    rightEncoderInFeet = rightPosition * DriveConstants.kEncoderDistancePerPulse;
+
+    NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
+    NetworkTableEntry tx = table.getEntry("tx");
+    NetworkTableEntry ty = table.getEntry("ty");
+    NetworkTableEntry ta = table.getEntry("ta");
+
+    x = tx.getDouble(0.0);
+    y = ty.getDouble(0.0);
+    a = ta.getDouble(0.0);
+
+    SmartDashboard.putNumber("LimelightX", x);
+    SmartDashboard.putNumber("LimelightY", y);
+    SmartDashboard.putNumber("LimelightArea", a);
+
+
+    double limeHeightToTarget = DriveConstants.targetHeight - DriveConstants.limeBaseHeight;
+    double theta = Math.toRadians(DriveConstants.limeAngle + y);
+    distanceToTarget = limeHeightToTarget / (Math.tan(theta));
+
+    SmartDashboard.putNumber("distanceToTarget", distanceToTarget);
+    SmartDashboard.putNumber("LeftEncoder", leftPosition);
+    SmartDashboard.putNumber("RightEncoder", rightPosition);
+
+
+
+
     Rotation2d gyroAngle = gyro.getRotation2d();
 
     mOdometry.update(gyroAngle, leftSideNativeDistanceInMeters(leftFront.getSelectedSensorPosition()),
@@ -194,6 +274,7 @@ public class drive extends SubsystemBase {
 
     SmartDashboard.putNumber("Left Encoder Native Meters",
         leftSideNativeDistanceInMeters(leftFront.getSelectedSensorPosition()));
+
     SmartDashboard.putNumber("Right Encoder Native Meters",
         rightSideNativeDistanceInMeters(rightFront.getSelectedSensorPosition()));
 
